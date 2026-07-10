@@ -1,0 +1,21 @@
+{
+  "_comment": "Tickers to track beyond the S&P 500. Add any Yahoo Finance symbol here (stocks under 'stocks', ETFs under 'etfs'), commit, and the next data refresh will include it.",
+  "stocks": [
+    "COIN", "HOOD", "MSTR", "SHOP", "SNOW", "NET", "SOFI", "RIVN", "LCID",
+    "NIO", "XPEV", "LI", "BABA", "JD", "PDD", "TSM", "ARM", "ASML", "SAP",
+    "TM", "SONY", "NVO", "MELI", "SE", "GRAB", "CPNG", "BIDU", "RBLX", "U",
+    "DKNG", "PATH", "AFRM", "IONQ", "RGTI", "GME", "AMC", "MARA", "RIOT",
+    "CLSK", "PLUG", "CHWY", "ETSY", "PINS", "SNAP", "SPOT", "ZM", "DOCU",
+    "OKTA", "TWLO", "DDOG", "MDB", "CRSP", "BEAM", "TDOC", "LMND", "OPEN",
+    "CVNA", "CELH", "ELF", "ONON", "BIRK", "CAVA", "ALAB", "RDDT", "TEM",
+    "OKLO", "SMR", "ACHR", "JOBY", "RKLB", "ASTS", "LUNR", "NBIS", "CRWV"
+  ],
+  "etfs": [
+    "SPY", "QQQ", "DIA", "IWM", "VTI", "VOO", "VEA", "VWO", "EEM",
+    "GLD", "SLV", "USO", "UNG", "TLT", "IEF", "SHY", "LQD", "HYG", "AGG",
+    "ARKK", "SOXX", "SMH", "XBI", "IBB", "ITA", "URA", "LIT", "ICLN", "TAN",
+    "XLF", "XLE", "XLK", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB", "XLRE", "XLC",
+    "IBIT", "ETHA", "BITO", "FBTC", "GBTC", "EFA", "IEMG", "RSP", "SCHD",
+    "JEPI", "JEPQ", "TQQQ", "SQQQ", "SOXL", "SOXS", "UVXY", "VXX"
+  ]
+}

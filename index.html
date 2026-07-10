@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Heatmap</title>
+<meta name="description" content="Finviz-style heatmap for your own watchlist of stocks and crypto.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='5' y='5' width='55' height='55' rx='8' fill='%2330cc5a'/><rect x='65' y='5' width='30' height='55' rx='8' fill='%23f63538'/><rect x='5' y='65' width='90' height='30' rx='8' fill='%23414554'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="topbar">
+    <h1>Market Heatmap</h1>
+    <form id="add-form" autocomplete="off">
+      <input id="add-input" list="symbol-list" placeholder="Add ticker… (AAPL, BTC)" spellcheck="false" autocapitalize="characters">
+      <datalist id="symbol-list"></datalist>
+      <button type="submit" title="Add to watchlist">Add</button>
+    </form>
+    <div id="controls">
+      <label>Size
+        <select id="size-by">
+          <option value="mc" selected>Market cap</option>
+          <option value="eq">Equal</option>
+        </select>
+      </label>
+      <label>Group
+        <select id="group-by">
+          <option value="sector" selected>Sector</option>
+          <option value="none">None</option>
+        </select>
+      </label>
+      <button id="edit-btn" type="button">Edit list</button>
+      <button id="share-btn" type="button" title="Copy a shareable link to this watchlist">Share</button>
+    </div>
+    <div id="status" title="Stock quotes are delayed and refresh every 15 minutes during market hours; crypto is live from CoinGecko."></div>
+  </header>
+
+  <main id="map" aria-label="Watchlist heatmap"></main>
+  <div id="empty-hint" hidden>
+    <p>Your watchlist is empty.</p>
+    <p>Add stock tickers or crypto symbols above, or <button id="reset-inline" type="button" class="linkish">load the default list</button>.</p>
+  </div>
+
+  <aside id="panel" hidden>
+    <div id="panel-head">
+      <h2>Watchlist</h2>
+      <button id="panel-close" type="button" aria-label="Close">×</button>
+    </div>
+    <div id="chips"></div>
+    <div id="panel-actions">
+      <button id="reset-btn" type="button">Reset to default</button>
+      <button id="clear-btn" type="button">Clear all</button>
+    </div>
+    <details id="bulk">
+      <summary>Bulk edit</summary>
+      <p class="hint">One symbol per line or comma-separated. Suffix crypto with <code>.X</code> if a stock shares the symbol (e.g. <code>BTC.X</code>).</p>
+      <textarea id="bulk-text" rows="6" spellcheck="false"></textarea>
+      <button id="bulk-apply" type="button">Apply</button>
+    </details>
+    <p class="hint" id="missing-hint" hidden></p>
+  </aside>
+
+  <div id="tooltip" hidden></div>
+  <div id="toast" hidden></div>
+
+  <footer>
+    <span>Stock data: Yahoo Finance (delayed) · Crypto: <a href="https://www.coingecko.com" target="_blank" rel="noopener">CoinGecko</a> (live) · Not investment advice.</span>
+  </footer>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
