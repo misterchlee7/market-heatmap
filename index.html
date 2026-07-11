@@ -18,8 +18,9 @@
     </form>
     <div id="controls">
       <label>Size
-        <select id="size-by">
-          <option value="mc" selected>Market cap</option>
+        <select id="size-by" title="Balanced sizes by √market-cap so small positions stay readable; Market cap is finviz-style proportional">
+          <option value="sqrt" selected>Balanced</option>
+          <option value="mc">Market cap</option>
           <option value="eq">Equal</option>
         </select>
       </label>

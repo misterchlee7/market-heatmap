@@ -12,6 +12,7 @@ const DEFAULT_LIST = [
   "BTC.X", "ETH.X", "SOL.X",
 ];
 const LS_LIST = "heatmap.watchlist.v1";
+const LS_PREFS = "heatmap.prefs.v1";
 const LS_CRYPTO_CACHE = "heatmap.cryptocache.v1";
 const LS_CUSTOM_COINS = "heatmap.customcoins.v1";
 const CRYPTO_REFRESH_MS = 60_000;
@@ -36,7 +37,7 @@ const state = {
   cryptoMap: {},     // SYMBOL -> {id, n}
   crypto: {},        // SYMBOL -> live coin data
   customCoins: JSON.parse(localStorage.getItem(LS_CUSTOM_COINS) || "{}"),
-  sizeBy: "mc",
+  sizeBy: "sqrt",
   groupBy: "sector",
   cryptoError: false,
 };
@@ -57,14 +58,29 @@ function loadList() {
       state.list.push(it);
     }
   }
-  if (fromUrl) {
-    saveList();
-    history.replaceState(null, "", location.pathname); // absorb the shared link
-  }
+  saveList(); // also syncs the address bar
 }
 
+// Persists the list and mirrors it into the URL, so the address bar is always
+// a shareable / bookmarkable snapshot of the current watchlist.
 function saveList() {
   localStorage.setItem(LS_LIST, JSON.stringify(state.list.map(keyOf)));
+  const url = state.list.length
+    ? `${location.pathname}?t=${state.list.map(keyOf).join(",")}`
+    : location.pathname;
+  history.replaceState(null, "", url);
+}
+
+function savePrefs() {
+  localStorage.setItem(LS_PREFS, JSON.stringify({ sizeBy: state.sizeBy, groupBy: state.groupBy }));
+}
+
+function loadPrefs() {
+  const p = JSON.parse(localStorage.getItem(LS_PREFS) || "{}");
+  if (p.sizeBy) state.sizeBy = p.sizeBy;
+  if (p.groupBy) state.groupBy = p.groupBy;
+  $("size-by").value = state.sizeBy;
+  $("group-by").value = state.groupBy;
 }
 
 // "AAPL" -> stock; "BTC" -> crypto if it isn't a known stock; "BTC.X",
@@ -246,10 +262,20 @@ function render() {
   if (!items.length) return;
 
   const W = mapEl.clientWidth, H = mapEl.clientHeight;
-  const values = items.map((it) => (state.sizeBy === "eq" ? 1 : it.mc || 0));
-  const maxV = Math.max(...values, 1);
-  // Floor tiny/missing caps so every tile stays visible and clickable.
-  items.forEach((it, i) => { it.value = Math.max(values[i], maxV / 300); });
+  let values = items.map((it) =>
+    state.sizeBy === "eq" ? 1
+    : state.sizeBy === "sqrt" ? Math.sqrt(it.mc || 0)
+    : it.mc || 0);
+  // Guarantee every tile a readable minimum area (enough for its ticker
+  // label), whatever the size mode says. Iterate because raising small
+  // values grows the total, which shrinks everyone's share slightly.
+  const minArea = Math.min(2400, (W * H) / items.length / 2);
+  for (let pass = 0; pass < 3; pass++) {
+    const total = values.reduce((a, b) => a + b, 0) || 1;
+    const floorV = total * (minArea / (W * H));
+    values = values.map((v) => Math.max(v, floorV));
+  }
+  items.forEach((it, i) => { it.value = values[i]; });
 
   let tiles = [];
   if (state.groupBy === "sector" && items.length > 1) {
@@ -444,8 +470,8 @@ function wireEvents() {
     }
   });
 
-  $("size-by").addEventListener("change", (e) => { state.sizeBy = e.target.value; render(); });
-  $("group-by").addEventListener("change", (e) => { state.groupBy = e.target.value; render(); });
+  $("size-by").addEventListener("change", (e) => { state.sizeBy = e.target.value; savePrefs(); render(); });
+  $("group-by").addEventListener("change", (e) => { state.groupBy = e.target.value; savePrefs(); render(); });
 
   $("edit-btn").addEventListener("click", () => { $("panel").hidden = !$("panel").hidden; });
   $("panel-close").addEventListener("click", () => { $("panel").hidden = true; });
@@ -454,7 +480,7 @@ function wireEvents() {
     const url = `${location.origin}${location.pathname}?t=${state.list.map(keyOf).join(",")}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast("Shareable link copied");
+      toast("Link copied — open it on another device to load this watchlist there");
     } catch {
       prompt("Copy this link:", url);
     }
@@ -501,6 +527,7 @@ function wireEvents() {
     return;
   }
   loadList();
+  loadPrefs();
   buildDatalist();
   wireEvents();
   render();
