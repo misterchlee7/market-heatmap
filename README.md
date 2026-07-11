@@ -28,6 +28,12 @@ group).
   use the `.X` suffix (`BTC.X`) to force crypto when a stock shares the symbol.
 - **Edit list** opens the watchlist panel: remove chips, bulk-paste a list,
   reset, or clear.
+- **Period** switches the % change shown: 1D, 1W, 1M, 3M, 6M, YTD, 1Y, 5Y.
+  Stock returns are computed against daily-close reference prices refreshed
+  nightly (`data/refs.json`, from Yahoo's chart API); crypto history comes from
+  CoinGecko (free tier reaches back one year, so coins show "–" on 5Y — no
+  made-up numbers). The color scale widens with the period (±3% at 1D, ±40% at
+  1Y) so longer horizons don't saturate.
 - **Size** modes: **Balanced** (default, area ∝ √market-cap so small positions
   stay readable), **Market cap** (finviz-style proportional), **Equal**. Every
   tile is guaranteed a readable minimum size in all modes. **Group** toggles

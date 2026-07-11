@@ -17,6 +17,18 @@
       <button type="submit" title="Add to watchlist">Add</button>
     </form>
     <div id="controls">
+      <label>Period
+        <select id="period" title="Stocks: computed from Yahoo daily closes. Crypto: CoinGecko free data reaches back 1 year, so 5Y shows – for coins.">
+          <option value="d1" selected>1D</option>
+          <option value="w1">1W</option>
+          <option value="m1">1M</option>
+          <option value="m3">3M</option>
+          <option value="m6">6M</option>
+          <option value="ytd">YTD</option>
+          <option value="y1">1Y</option>
+          <option value="y5">5Y</option>
+        </select>
+      </label>
       <label>Size
         <select id="size-by" title="Balanced sizes by √market-cap so small positions stay readable; Market cap is finviz-style proportional">
           <option value="sqrt" selected>Balanced</option>

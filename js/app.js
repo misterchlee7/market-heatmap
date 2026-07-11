@@ -15,16 +15,30 @@ const LS_LIST = "heatmap.watchlist.v1";
 const LS_PREFS = "heatmap.prefs.v1";
 const LS_CRYPTO_CACHE = "heatmap.cryptocache.v1";
 const LS_CUSTOM_COINS = "heatmap.customcoins.v1";
+const LS_CRYPTO_HIST = "heatmap.cryptohist.v1";
 const CRYPTO_REFRESH_MS = 60_000;
+const CRYPTO_HIST_TTL_MS = 6 * 3600_000;
 
-// Finviz-style diverging scale: % change stops -> colors.
+// Finviz-style diverging scale at ±bound %: red -> neutral gray -> green.
 const COLOR_STOPS = [
-  [-3, [246, 53, 56]],
-  [-1.5, [191, 64, 69]],
+  [-1, [246, 53, 56]],
+  [-0.5, [191, 64, 69]],
   [0, [65, 69, 84]],
-  [1.5, [53, 118, 78]],
-  [3, [48, 204, 90]],
+  [0.5, [53, 118, 78]],
+  [1, [48, 204, 90]],
 ];
+
+// Longer periods swing more, so each gets its own color saturation bound.
+const PERIODS = {
+  d1: { label: "1D", cryptoLabel: "24h", bound: 3 },
+  w1: { label: "1W", bound: 7 },
+  m1: { label: "1M", bound: 10 },
+  m3: { label: "3M", bound: 15 },
+  m6: { label: "6M", bound: 25 },
+  ytd: { label: "YTD", bound: 30 },
+  y1: { label: "1Y", bound: 40 },
+  y5: { label: "5Y", bound: 150 },
+};
 
 const $ = (id) => document.getElementById(id);
 const mapEl = $("map"), tooltipEl = $("tooltip");
@@ -37,8 +51,11 @@ const state = {
   cryptoMap: {},     // SYMBOL -> {id, n}
   crypto: {},        // SYMBOL -> live coin data
   customCoins: JSON.parse(localStorage.getItem(LS_CUSTOM_COINS) || "{}"),
+  stockRefs: {},     // SYM -> {w1, m1, ...} reference prices from data/refs.json
+  cryptoHist: JSON.parse(localStorage.getItem(LS_CRYPTO_HIST) || "{}"), // SYM -> {t, refs}
   sizeBy: "sqrt",
   groupBy: "sector",
+  period: "d1",
   cryptoError: false,
 };
 
@@ -72,15 +89,19 @@ function saveList() {
 }
 
 function savePrefs() {
-  localStorage.setItem(LS_PREFS, JSON.stringify({ sizeBy: state.sizeBy, groupBy: state.groupBy }));
+  localStorage.setItem(LS_PREFS, JSON.stringify({
+    sizeBy: state.sizeBy, groupBy: state.groupBy, period: state.period,
+  }));
 }
 
 function loadPrefs() {
   const p = JSON.parse(localStorage.getItem(LS_PREFS) || "{}");
   if (p.sizeBy) state.sizeBy = p.sizeBy;
   if (p.groupBy) state.groupBy = p.groupBy;
+  if (PERIODS[p.period]) state.period = p.period;
   $("size-by").value = state.sizeBy;
   $("group-by").value = state.groupBy;
+  $("period").value = state.period;
 }
 
 // "AAPL" -> stock; "BTC" -> crypto if it isn't a known stock; "BTC.X",
@@ -100,15 +121,17 @@ function parseToken(tok) {
 /* ---------------- data loading ---------------- */
 
 async function loadStatic() {
-  const [quotes, universe, cryptoMap] = await Promise.all([
+  const [quotes, universe, cryptoMap, refs] = await Promise.all([
     fetch("data/quotes.json").then((r) => r.json()),
     fetch("data/universe.json").then((r) => r.json()),
     fetch("data/crypto-map.json").then((r) => r.json()),
+    fetch("data/refs.json").then((r) => r.json()).catch(() => ({ refs: {} })),
   ]);
   state.quotes = quotes.quotes;
   state.quotesUpdated = quotes.updated;
   state.universe = universe;
   state.cryptoMap = cryptoMap;
+  state.stockRefs = refs.refs;
 }
 
 function coinIdFor(sym) {
@@ -164,17 +187,90 @@ async function refreshCrypto() {
 
 /* ---------------- item resolution ---------------- */
 
+// Change % for the selected period, or null when honest data isn't available
+// (IPO younger than the period, crypto history beyond CoinGecko's free year).
+function periodChange(price, chg1d, refs) {
+  if (state.period === "d1") return chg1d;
+  const ref = refs?.[state.period];
+  return ref ? (price / ref - 1) * 100 : null;
+}
+
 function resolveItem(it) {
   if (it.kind === "s") {
     const q = state.quotes[it.sym];
     const meta = state.universe[it.sym];
     if (!q) return { ...it, name: meta?.n || it.sym, sector: meta?.s || "Other", nodata: true };
-    return { ...it, name: q.n, sector: q.s, price: q.p, chg: q.c, mc: q.mc };
+    return {
+      ...it, name: q.n, sector: q.s, price: q.p, mc: q.mc, chg1d: q.c,
+      chg: periodChange(q.p, q.c, state.stockRefs[it.sym]),
+    };
   }
   const d = state.crypto[it.sym];
   const name = d?.n || state.cryptoMap[it.sym]?.n || state.customCoins[it.sym]?.n || it.sym;
   if (!d) return { ...it, name, sector: "Crypto", nodata: true };
-  return { ...it, name, sector: "Crypto", price: d.p, chg: d.c, mc: d.mc };
+  return {
+    ...it, name, sector: "Crypto", price: d.p, mc: d.mc, chg1d: d.c,
+    chg: periodChange(d.p, d.c, state.cryptoHist[it.sym]?.refs),
+  };
+}
+
+/* ---------------- crypto history (for non-1D periods) ---------------- */
+
+function periodTargets(nowMs) {
+  const shift = (fn) => { const d = new Date(nowMs); fn(d); return d.getTime(); };
+  return {
+    w1: nowMs - 7 * 864e5,
+    m1: shift((d) => d.setMonth(d.getMonth() - 1)),
+    m3: shift((d) => d.setMonth(d.getMonth() - 3)),
+    m6: shift((d) => d.setMonth(d.getMonth() - 6)),
+    ytd: new Date(new Date(nowMs).getFullYear(), 0, 1).getTime(),
+    y1: shift((d) => d.setFullYear(d.getFullYear() - 1)),
+    // No y5: CoinGecko's free tier only serves 365 days of history.
+  };
+}
+
+function refAt(points, target) {
+  let best = null;
+  for (const [ts, px] of points) {
+    if (ts <= target) best = px; else break;
+  }
+  if (best == null && points.length && points[0][0] - target < 4 * 864e5) best = points[0][1];
+  return best;
+}
+
+// Fetch a year of daily prices per watchlist coin (cached 6h) so crypto tiles
+// have real 1W/1M/3M/6M/YTD/1Y numbers. Runs only when such a period is shown.
+let cryptoHistBusy = false;
+async function ensureCryptoHist() {
+  if (state.period === "d1" || cryptoHistBusy) return;
+  const now = Date.now();
+  const need = state.list.filter((it) =>
+    it.kind === "c" && coinIdFor(it.sym) &&
+    !(state.cryptoHist[it.sym] && now - state.cryptoHist[it.sym].t < CRYPTO_HIST_TTL_MS));
+  if (!need.length) return;
+  cryptoHistBusy = true;
+  let changed = false;
+  for (const it of need) {
+    try {
+      const j = await (await fetch(
+        `https://api.coingecko.com/api/v3/coins/${coinIdFor(it.sym)}/market_chart?vs_currency=usd&days=365`
+      )).json();
+      if (!Array.isArray(j.prices)) throw new Error("rate limited");
+      const refs = {};
+      for (const [key, target] of Object.entries(periodTargets(now))) {
+        const v = refAt(j.prices, target);
+        if (v != null) refs[key] = v;
+      }
+      state.cryptoHist[it.sym] = { t: now, refs };
+      changed = true;
+      await new Promise((r) => setTimeout(r, 500));
+    } catch { break; /* rate limited: retry on next refresh cycle */ }
+  }
+  cryptoHistBusy = false;
+  if (changed) {
+    localStorage.setItem(LS_CRYPTO_HIST, JSON.stringify(state.cryptoHist));
+    render();
+  }
 }
 
 /* ---------------- squarified treemap ---------------- */
@@ -225,8 +321,11 @@ function squarify(items, x, y, w, h) {
 
 /* ---------------- rendering ---------------- */
 
+const NEUTRAL = "rgb(65,69,84)";
+
 function colorFor(chg) {
-  const v = Math.max(COLOR_STOPS[0][0], Math.min(COLOR_STOPS.at(-1)[0], chg));
+  if (chg == null) return "#2e3240";
+  const v = Math.max(-1, Math.min(1, chg / PERIODS[state.period].bound));
   for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
     const [v0, c0] = COLOR_STOPS[i], [v1, c1] = COLOR_STOPS[i + 1];
     if (v <= v1) {
@@ -235,7 +334,14 @@ function colorFor(chg) {
       return `rgb(${mix.join(",")})`;
     }
   }
-  return "rgb(65,69,84)";
+  return NEUTRAL;
+}
+
+function fmtChg(chg) {
+  if (chg == null) return "–";
+  const a = Math.abs(chg);
+  const dec = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+  return (chg >= 0 ? "+" : "") + chg.toFixed(dec) + "%";
 }
 
 function fmtPrice(p) {
@@ -331,7 +437,7 @@ function makeTile({ x, y, w, h, item }) {
       const chg = document.createElement("div");
       chg.className = "chg";
       chg.style.fontSize = Math.max(8.5, fs * 0.58) + "px";
-      chg.textContent = (item.chg >= 0 ? "+" : "") + item.chg.toFixed(2) + "%";
+      chg.textContent = fmtChg(item.chg);
       el.appendChild(chg);
     }
   }
@@ -348,10 +454,15 @@ function makeTile({ x, y, w, h, item }) {
 }
 
 function showTooltip(e, item) {
+  const P = PERIODS[state.period];
+  const label = (item.kind === "c" && P.cryptoLabel) || P.label;
+  const extra1d = state.period !== "d1"
+    ? `<div class="tt-row"><span>${item.kind === "c" ? "24h" : "1D"}</span><b>${fmtChg(item.chg1d)}</b></div>`
+    : "";
   const rows = item.nodata
     ? `<div class="tt-row"><span>No data yet</span></div>`
     : `<div class="tt-row"><span>Price</span><b>$${fmtPrice(item.price)}</b></div>
-       <div class="tt-row"><span>${item.kind === "c" ? "24h" : "Today"}</span><b>${(item.chg >= 0 ? "+" : "") + item.chg.toFixed(2)}%</b></div>
+       <div class="tt-row"><span>${label}</span><b>${item.chg == null ? "no data this far back" : fmtChg(item.chg)}</b></div>${extra1d}
        <div class="tt-row"><span>${item.kind === "c" ? "Mkt cap" : state.universe[item.sym]?.t === "etf" ? "Net assets" : "Mkt cap"}</span><b>${fmtCap(item.mc)}</b></div>`;
   tooltipEl.innerHTML =
     `<div class="tt-name">${item.sym} · ${escapeHtml(item.name)}</div>
@@ -470,6 +581,12 @@ function wireEvents() {
     }
   });
 
+  $("period").addEventListener("change", (e) => {
+    state.period = e.target.value;
+    savePrefs();
+    render();
+    ensureCryptoHist();
+  });
   $("size-by").addEventListener("change", (e) => { state.sizeBy = e.target.value; savePrefs(); render(); });
   $("group-by").addEventListener("change", (e) => { state.groupBy = e.target.value; savePrefs(); render(); });
 
@@ -531,6 +648,6 @@ function wireEvents() {
   buildDatalist();
   wireEvents();
   render();
-  refreshCrypto();
-  setInterval(refreshCrypto, CRYPTO_REFRESH_MS);
+  refreshCrypto().then(ensureCryptoHist);
+  setInterval(() => refreshCrypto().then(ensureCryptoHist), CRYPTO_REFRESH_MS);
 })();
