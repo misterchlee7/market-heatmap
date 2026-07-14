@@ -5,15 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Every 15 min spanning US market hours (13:00-21:00 UTC covers EDT & EST).
-    - cron: "*/15 13-20 * * 1-5"
-    # One run after the close (EST winter close = 21:00 UTC).
-    - cron: "5 21 * * 1-5"
+    # Hourly during market hours, offset 31 min past the hour to dodge
+    # top-of-hour scheduler congestion (13:31 UTC ~ 9:31am ET in EDT).
+    # Range covers EDT & EST close (13:00-21:00 UTC).
+    - cron: "31 13-21 * * 1-5"
     # Daily off-hours refresh so the timestamp never goes truly stale.
-    - cron: "0 8 * * *"
+    - cron: "37 8 * * *"
     # Weekly: rebuild the ticker universe / crypto map and commit if changed.
     # The commit doubles as repo activity so GitHub never auto-disables the cron.
-    - cron: "0 9 * * 0"
+    - cron: "42 9 * * 0"
 
 permissions:
   contents: write
@@ -38,7 +38,7 @@ jobs:
           node-version: 22
 
       - name: Rebuild ticker universe (weekly)
-        if: github.event.schedule == '0 9 * * 0'
+        if: github.event.schedule == '42 9 * * 0'
         run: |
           node scripts/build-universe.mjs
           if ! git diff --quiet data/; then
@@ -50,7 +50,7 @@ jobs:
           fi
 
       - name: Refresh historical reference prices (daily)
-        if: github.event.schedule == '0 8 * * *' || github.event.schedule == '0 9 * * 0'
+        if: github.event.schedule == '37 8 * * *' || github.event.schedule == '42 9 * * 0'
         run: |
           node scripts/fetch-history.mjs
           if ! git diff --quiet data/refs.json; then
