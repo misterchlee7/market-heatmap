@@ -9,11 +9,13 @@ group).
 
 - **Static site** (`index.html`, `js/app.js`, `css/style.css`) — no framework,
   no build step, no API keys.
-- **Stock quotes** — a GitHub Actions workflow
-  ([.github/workflows/refresh.yml](.github/workflows/refresh.yml)) fetches
-  delayed quotes for a ~630-symbol universe (S&P 500 + popular extras + ETFs)
-  from Yahoo Finance every 15 minutes during US market hours and redeploys the
-  site with a fresh `data/quotes.json`.
+- **Stock quotes** — a [Cloudflare Worker](worker/) fetches delayed quotes for a
+  ~630-symbol universe (S&P 500 + popular extras + ETFs) from Yahoo Finance on an
+  hourly cron and serves them as JSON to the browser (set via `QUOTES_URL` in
+  `js/app.js`). If the Worker is unset or unreachable the site falls back to a
+  bundled `data/quotes.json` snapshot, refreshed daily by a GitHub Actions
+  workflow ([.github/workflows/refresh.yml](.github/workflows/refresh.yml)) that
+  also rebuilds the ticker universe and history reference prices.
 - **Crypto** — fetched live in the browser from the free
   [CoinGecko](https://www.coingecko.com) API (top 500 coins bundled; anything
   else resolves via CoinGecko search).
@@ -44,7 +46,7 @@ group).
 
 Quotes only exist for symbols in the tracked universe. Add your symbol to
 [`data/extra-tickers.json`](data/extra-tickers.json) (stocks or ETFs), commit,
-and it will have data within 15 minutes. The universe itself (S&P 500
+and it will have data within the hour. The universe itself (S&P 500
 constituents, coin rankings) rebuilds automatically every Sunday.
 
 ## Local development

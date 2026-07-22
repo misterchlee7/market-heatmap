@@ -5,11 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Hourly during market hours, offset 31 min past the hour to dodge
-    # top-of-hour scheduler congestion (13:31 UTC ~ 9:31am ET in EDT).
-    # Range covers EDT & EST close (13:00-21:00 UTC).
-    - cron: "31 13-21 * * 1-5"
-    # Daily off-hours refresh so the timestamp never goes truly stale.
+    # Intraday quote refresh is handled by the Cloudflare Worker (worker/),
+    # whose cron is reliable and never auto-disables. Actions only handles the
+    # low-frequency jobs below plus keeping the fallback snapshot fresh daily.
+    # Daily off-hours refresh so the bundled fallback quotes.json stays recent.
     - cron: "37 8 * * *"
     # Weekly: rebuild the ticker universe / crypto map and commit if changed.
     # The commit doubles as repo activity so GitHub never auto-disables the cron.
@@ -49,19 +48,24 @@ jobs:
             git push
           fi
 
-      - name: Refresh historical reference prices (daily)
-        if: github.event.schedule == '37 8 * * *' || github.event.schedule == '42 9 * * 0'
+      # Intraday-relevant refs are served by the Cloudflare Worker (worker/,
+      # /refs, daily cron). Actions rebuilds the bundled fallback refs.json
+      # weekly alongside the universe so the offline snapshot never goes stale.
+      - name: Refresh historical reference prices (weekly fallback)
+        if: github.event.schedule == '42 9 * * 0'
         run: |
           node scripts/fetch-history.mjs
           if ! git diff --quiet data/refs.json; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add data/refs.json
-            git commit -m "chore: daily history refresh [skip ci]"
+            git commit -m "chore: weekly history refresh [skip ci]"
             git push
           fi
 
-      - name: Fetch quotes
+      # Refreshes the bundled data/quotes.json that the site falls back to when
+      # the Worker feed is unreachable. Intraday freshness comes from the Worker.
+      - name: Fetch quotes (fallback snapshot)
         run: node scripts/fetch-quotes.mjs
 
       - uses: actions/configure-pages@v5

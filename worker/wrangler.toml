@@ -1,0 +1,21 @@
+name = "market-heatmap-quotes"
+main = "src/index.mjs"
+compatibility_date = "2024-11-01"
+
+# Cloudflare cron is reliable and never auto-disables from inactivity.
+#   0 13-21 * * 1-5  quotes, hourly during US market hours (13-21 UTC = EDT/EST session)
+#   20 8 * * *       refs, daily off-hours (period reference close prices)
+[triggers]
+crons = ["0 13-21 * * 1-5", "20 8 * * *"]
+
+# KV namespace that holds the latest quotes.json blob.
+# Replace `id` with the value printed by:
+#   npx wrangler kv namespace create QUOTES
+[[kv_namespaces]]
+binding = "QUOTES"
+id = "9bf3026b2e1a49938fec1e0701a5dc05"
+
+[vars]
+# Where the Worker pulls the ticker universe from (rebuilt weekly by GitHub
+# Actions). Raw GitHub URL, no auth needed for a public repo.
+UNIVERSE_URL = "https://raw.githubusercontent.com/misterchlee7/market-heatmap/main/data/universe.json"

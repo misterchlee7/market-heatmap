@@ -6,6 +6,12 @@
 // Set after the repo exists; used for the "add a missing ticker" edit link.
 const REPO_URL = "https://github.com/misterchlee7/market-heatmap";
 
+// Cloudflare Worker that serves fresh quotes (see worker/). Refreshed hourly by
+// the Worker's cron trigger — reliable and decoupled from Pages deploys. Paste
+// the deployed worker URL here; empty string falls back to the bundled
+// data/quotes.json (last snapshot committed by GitHub Actions).
+const QUOTES_URL = "https://market-heatmap-quotes.heatmapmarket.workers.dev/";
+
 const DEFAULT_LIST = [
   "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "AVGO", "BRK-B",
   "JPM", "V", "LLY", "UNH", "XOM", "COST", "NFLX", "AMD", "PLTR", "COIN",
@@ -122,10 +128,10 @@ function parseToken(tok) {
 
 async function loadStatic() {
   const [quotes, universe, cryptoMap, refs] = await Promise.all([
-    fetch("data/quotes.json").then((r) => r.json()),
+    loadQuotes(),
     fetch("data/universe.json").then((r) => r.json()),
     fetch("data/crypto-map.json").then((r) => r.json()),
-    fetch("data/refs.json").then((r) => r.json()).catch(() => ({ refs: {} })),
+    loadRefs(),
   ]);
   state.quotes = quotes.quotes;
   state.quotesUpdated = quotes.updated;
@@ -133,6 +139,29 @@ async function loadStatic() {
   state.cryptoMap = cryptoMap;
   state.stockRefs = refs.refs;
 }
+
+// Prefer the live Worker feed; fall back to the bundled snapshot if the Worker
+// is unset or unreachable so the site never renders empty. `key` is the field
+// the Worker payload must contain ("quotes"/"refs"); `fallback` is the bundled
+// JSON path.
+async function loadFromWorker(path, key, fallback) {
+  if (QUOTES_URL) {
+    try {
+      const r = await fetch(QUOTES_URL.replace(/\/$/, "") + path);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      if (j[key]) return j;
+      throw new Error(`no ${key} in worker response`);
+    } catch (e) {
+      console.warn(`worker ${key} unavailable (${e.message}); using bundled snapshot`);
+    }
+  }
+  return fetch(fallback).then((r) => r.json());
+}
+
+const loadQuotes = () => loadFromWorker("/", "quotes", "data/quotes.json");
+const loadRefs = () =>
+  loadFromWorker("/refs", "refs", "data/refs.json").catch(() => ({ refs: {} }));
 
 function coinIdFor(sym) {
   return state.cryptoMap[sym]?.id || state.customCoins[sym]?.id || null;
